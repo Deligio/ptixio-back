@@ -221,6 +221,45 @@ class Exams extends BaseController
 
     }
 
+    public function newExamV2()
+    {
+        $examModel = new ExamsModel($this->db);
+        $questionModel = new QuestionsModel($this->db);
+        $answerModel = new AnswersModel($this->db);
+
+        $request = service('request');
+        $data = $this->request->getJSON();
+        $examData = [
+            'e_name' => $data->title,
+            'e_c_id' => $data->course,
+        ];
+        
+        $exam_id = $examModel->insert($examData,true);
+
+        foreach ($data->questions as $question) {
+            $questionData = [
+                'q_e_id' => (string) $exam_id,
+                'q_title' => $question->q_title,
+                'q_subtitle' => $question->q_subtitle,
+            ];
+            $questionModel->save($questionData);
+            $question_id = $questionModel->getInsertID();
+            $correctAnswer = $question->correctAnswer;
+            foreach ($question->answers as $key => $answer) {
+                $answerData = [
+                    'a_q_id' => (string) $question_id,
+                    'a_title' => $answer->a_title,
+                    'a_subtitle' => $answer->a_subtitle,
+                    'a_result' => ($key + 1 == $correctAnswer) ? 'Correct' : 'Wrong',
+                ];
+                $answerModel->save($answerData);
+            }
+        }
+
+        return $this->respond($exam_id, 200);
+
+    }
+
     public function getCourses()
     {
         $model = new CoursesModel($this->db);
