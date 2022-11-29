@@ -368,8 +368,13 @@ class Exams extends BaseController
     public function getAnalyticResults()
     {
         $model = new ScoresModel($this->db);
-        // $user = $this->request->getVar('user');
+        $userModel = new UsersModel($this->db);
         $exams = $this->request->getVar('selected_exams');
+        $user = $this->request->getVar('user');
+        $u_where = [
+            'u_id' => $user,
+        ];
+        $user_type = $userModel->select('u_type')->where($u_where)->first()->u_type;
 
         $select = '
         sc_id as score_id,
@@ -386,13 +391,15 @@ class Exams extends BaseController
         u_name as name,
         u_surname as surname
         ';
-    
+        $an_where = [
+            'sc_s_id' => $user,
+        ];
         $analytics = $model->select($select)
                 ->join('results', 'r_s_id = sc_s_id AND r_exam_time = sc_time')
                 ->join('questions','r_q_id = q_id')
                 ->join('answers', 'r_a_id = a_id')
                 ->whereIn('sc_e_id', $exams)
-                // ->where($where)
+                ->where(($user_type == 'Student') ? $an_where : [])
                 ->findAll();
         $students = $model->select($students_select)
                     ->distinct()
