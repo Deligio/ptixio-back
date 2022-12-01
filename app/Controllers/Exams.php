@@ -271,6 +271,7 @@ class Exams extends BaseController
                 ->select("
                     c_id as id,
                     c_name as name,
+                    c_semester as semester,
                     c_season as season
                     ")
                 ->where($where)
@@ -316,10 +317,9 @@ class Exams extends BaseController
             'c_id' => $this->request->getVar('id'),
             'c_name' => $this->request->getVar('course'),
             'c_season' => $this->request->getVar('season'),
+            'c_semester' => $this->request->getVar('semester'),
         ];
-        echo '<pre>';
-         print_r($data);
-        echo '</pre>';exit;
+
         $save = $model->save($data);
         if($save){
             return $this->respond($save, 200); 

@@ -7,6 +7,7 @@ class CoursesModel extends Model{
   protected $primaryKey = 'c_id';
   protected $allowedFields = [
     'c_name',
+    'c_semester',
     'c_season',
     'c_status',
   ];
