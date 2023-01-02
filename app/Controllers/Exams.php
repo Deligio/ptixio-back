@@ -7,6 +7,7 @@ use App\Models\AnswersModel;
 use App\Models\ResultsModel;
 use App\Models\CoursesModel;
 use App\Models\ScoresModel;
+use App\Models\SubscribesModel;
 use CodeIgniter\API\ResponseTrait;
 
 class Exams extends BaseController
@@ -315,7 +316,7 @@ class Exams extends BaseController
         $model = new CoursesModel($this->db);
         $data = [
             'c_id' => $this->request->getVar('id'),
-            'c_name' => $this->request->getVar('course'),
+            'c_name' => $this->request->getVar('name'),
             'c_season' => $this->request->getVar('season'),
             'c_semester' => $this->request->getVar('semester'),
         ];
@@ -364,17 +365,21 @@ class Exams extends BaseController
 // use CodeIgniter\Database\RawSql;
 // $sql = "id > 2 AND name != 'Accountant'";
 // $builder->where(new RawSql($sql));
+    private function userType($id) {
+        $userModel = new UsersModel($this->db);
+        $u_where = [
+            'u_id' => $id,
+        ];
+        $user_type = $userModel->select('u_type')->where($u_where)->first()->u_type;
+        return $user_type;
+    }
 
     public function getAnalyticResults()
     {
         $model = new ScoresModel($this->db);
-        $userModel = new UsersModel($this->db);
         $exams = $this->request->getVar('selected_exams');
         $user = $this->request->getVar('user');
-        $u_where = [
-            'u_id' => $user,
-        ];
-        $user_type = $userModel->select('u_type')->where($u_where)->first()->u_type;
+        $user_type = $this->userType($user);
 
         $select = '
         sc_id as score_id,
@@ -405,6 +410,7 @@ class Exams extends BaseController
                     ->distinct()
                     ->join('users','sc_s_id = u_id')
                     ->whereIn('sc_e_id', $exams)
+                    ->where(($user_type == 'Student') ? $an_where : [])
                     ->findAll();
         $resp = [
             'analytics' => $analytics,
@@ -422,4 +428,185 @@ class Exams extends BaseController
     {
         return $this->respond(true, 200);
     }
+
+    public function getUsers()
+    {
+        $model = new UsersModel();
+        $select = '
+        u_id as id,
+        u_name as name,
+        u_surname as surname,
+        u_email as email,
+        u_type as type,
+        u_created_at as created_at
+        ';
+        $users = $model->select($select)->findAll();
+        if(boolval($users)){
+            $resp = [
+                'users' => $users,
+                'msg' => 'Users succesfully fetched',
+            ];
+            return $this->respond($resp,200);
+        }else{
+            return $this->fail('Cannot find users.');
+        }
+    }
+
+    public function saveUsers()
+    {
+        $model = new UsersModel();
+        $users = $this->request->getVar('users');
+        // $data = [
+        //     'u_id' => 
+        // ];
+        foreach ($users as $user) {
+            $data = [
+                'u_id' => $user->id,
+                'u_type' => $user->type,
+            ];
+            $save[] = $model->save($data);
+            if(!$save){
+                $resp = [
+                    'users' => $users,
+                    'msg' => "Cannot save user $user->email - $user->id",
+                ];
+                return $this->fail($resp);
+            }
+        }
+        $resp = [
+            'users' => $users,
+            'msg' => 'Users succesfully saved',
+        ];
+        return $this->respond($resp,200);
+    }
+
+    public function getChartScores() {
+        $score_Model = new ScoresModel($this->db);
+        $exam = $this->request->getVar('exam_id');
+        $where = [
+            'sc_e_id' => $exam,
+        ];
+        $scores_select = "
+            sc_id as id,
+            sc_s_id as student_id,
+            sc_e_id as exam_id,
+            sc_score as score,
+            sc_time as time ";
+        $scores = $score_Model
+                    ->select($scores_select)
+                    ->where($where)
+                    ->findAll();
+
+        $resp = [
+            'scores' => $scores,
+            'exam_id' => $exam,
+        ];
+        return $this->respond($resp, 200);
+    }
+
+    public function subscribedStudents() {
+        $userModel = new UsersModel($this->db);
+        $course_id = $this->request->getVar('course');
+        $where = [
+            'sub_c_id' => $course_id,
+            'u_type' => 'Student',
+            'sub_status' => 'Active'
+        ];
+        $select = " u_id as id,
+                    u_name as name, 
+                    u_surname as surname,
+                    u_email as email ";
+        $results = $userModel
+                    ->select($select)
+                    ->join('subscribes as sub', 'u_id = sub.sub_u_id')
+                    // ->join('users as user', 'u_id = sub_u_id')
+                    ->where($where)
+                    ->findAll();
+        $resp = [
+            'students' => $results,
+        ];
+        if(count($resp) == 0){
+            $this->fail(['msg' => 'Error getting students'], 402);
+        }
+        return $this->respond($resp, 200);
+    }
+
+    public function myCourses() 
+    {
+        $subsModel = new SubscribesModel($this->db);
+        $student_id = $this->request->getVar('user');
+        $user_type = $this->userType($student_id);
+        if($user_type !== 'Student'){
+            $resp = [
+                'msg' => 'Error: You are not student',
+            ];
+            return $this->fail($resp, 200);
+        }
+        $where = [
+            'sub_u_id' => $student_id,
+            'sub_status' => 'Active',
+        ];
+        $results = $subsModel->select('sub_c_id')->where($where)->findAll();
+        $results = array_map(function ($a) {return $a->{'sub_c_id'};}, $results);
+        $resp = [
+            'msg' => 'succesfull fetched courses',
+            'courses' => $results,
+        ];
+        return $this->respond($resp, 200);
+    }
+
+    public function subscribe() 
+    {
+        $subsModel = new SubscribesModel($this->db);
+        // $is_sub = $this->request->getVar('is_sub');
+        $req = $this->request->getJSON();
+        $is_sub = $req->is_sub;
+        $student_id = $req->user;
+        $user_type = $this->userType($student_id);
+        if($user_type !== 'Student'){
+            $resp = [
+                'msg' => 'Error: You are not student',
+            ];
+            return $this->fail($resp, 200);
+        }
+        $course_id = $req->course;
+        // elegxos an yparxei eggrafh na thn kanei active
+        $where = [
+            'sub_u_id' => $student_id,
+            'sub_c_id' => $course_id,
+        ];
+        $found = $subsModel->select('sub_id')->where($where)->first();
+        if(!$found && !$is_sub){ // απεγγραφή μη εγγεγραμμενο
+            $resp = ['msg' => 'Error: Δεν υπάρχει εγγραφή'];
+            return $this->fail($resp, 200);
+        } elseif( $found && $is_sub) { // εγγραφή τον εγγεγραμμενο
+            $sub_data = [
+                'sub_id' => $found->sub_id,
+                'sub_status' => 'Active'
+            ];
+            $save = $subsModel->save($sub_data);
+        } elseif( !$found && $is_sub) { // εγγραφή τον μη εγγεγραμμενο
+            $save = $subsModel->save($where);
+        } elseif( $found && !$is_sub) { // απεγγραφή τον εγγεγραμμενο
+            $unsub_data = [
+                'sub_id' => $found->sub_id,
+                'sub_status' => 'Inactive'
+            ];
+            $save = $subsModel->save($unsub_data);
+        }
+        // $save = $subsModel->save(($is_sub) ? $sub_data : $unsub_data);
+        if($save){
+            $resp = [
+                'msg' => ($is_sub) ? 'Επιτυχής εγγραφή' : 'Επιτυχής απεγγραφή',
+            ];
+            return $this->respond($resp, 200);
+        } else {
+            $resp = [
+                'msg' => ($is_sub) ? 'Error: unsuccessfull subscribe' : 'Error: unsuccessfull unsubscribe',
+            ];
+            return $this->fail($resp, 200);
+        }
+
+    }
+    
 }
